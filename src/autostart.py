@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import getpass
 import os
 import subprocess
 import sys
@@ -30,28 +29,32 @@ def _run_schtasks(arguments: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_powershell(script: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        startupinfo=HIDE_WINDOW,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+
 def enable_autostart() -> bool:
     exe_path = _get_exe_path()
-    username = getpass.getuser()
-    result = _run_schtasks(
-        [
-            "/Create",
-            "/TN",
-            TASK_NAME,
-            "/TR",
-            f'"{exe_path}"',
-            "/SC",
-            "ONLOGON",
-            "/DELAY",
-            "0000:10",
-            "/RL",
-            "HIGHEST",
-            "/RU",
-            username,
-            "/NP",
-            "/F",
-        ]
+    escaped_exe = exe_path.replace("'", "''")
+    script = (
+        f"$taskName = '{TASK_NAME}'; "
+        f"$exePath = '{escaped_exe}'; "
+        "$userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name; "
+        "$action = New-ScheduledTaskAction -Execute $exePath; "
+        "$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        "$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Highest; "
+        "$settings = New-ScheduledTaskSettingsSet -Compatibility Win8 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; "
+        "$task = New-ScheduledTask -Action $action -Principal $principal -Trigger $trigger -Settings $settings; "
+        "Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null"
     )
+    result = _run_powershell(script)
     return result.returncode == 0
 
 
