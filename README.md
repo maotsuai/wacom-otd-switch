@@ -4,7 +4,7 @@
 
 ## 使用方法
 
-1.确保已安装官方Wacom驱动和OpenTabletDriver驱动（v0.6以上）
+1. 确保已安装官方Wacom驱动和OpenTabletDriver驱动（v0.6以上）。
 2. 从 GitHub Releases 下载对应版本的 `exe` 文件。
 3. 将 `exe` 移动到你希望长期放置的位置。
 4. 双击运行程序。
