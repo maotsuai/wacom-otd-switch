@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import subprocess
 import time
 from dataclasses import dataclass
@@ -118,8 +119,16 @@ def _run_command(args: list[str], timeout: int = 10) -> CommandResult:
 
 
 def _tasklist_contains(image_name: str) -> bool:
-    result = _run_command(["tasklist", "/FI", f"IMAGENAME eq {image_name}"])
-    return image_name.lower() in result.stdout.lower()
+    process_name = image_name[:-4] if image_name.lower().endswith(".exe") else image_name
+    command = (
+        f"$p = Get-Process -Name '{process_name}' -ErrorAction SilentlyContinue; "
+        "if ($p) { exit 0 } else { exit 1 }"
+    )
+    result = _run_command(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        timeout=10,
+    )
+    return result.returncode == 0
 
 
 def _service_running(service_name: str) -> bool:
@@ -167,17 +176,47 @@ def _kill_processes(image_names: list[str]) -> list[CommandResult]:
     return results
 
 
-def _format_results(results: list[CommandResult]) -> str:
-    return "\n\n".join(result.format() for result in results if result.stdout.strip() or result.stderr.strip() or result.returncode != 0)
-
-
 def _launch_otd_unelevated(otd_exe_path: str) -> CommandResult:
-    working_dir = str(Path(otd_exe_path).resolve().parent)
-    command = (
-        "$shell = New-Object -ComObject Shell.Application; "
-        f"$shell.ShellExecute('{otd_exe_path.replace("'", "''")}', '--minimized', '{working_dir.replace("'", "''")}', 'open', 7)"
+    task_name = "WacomOTDSwitch_OTD_Unelevated"
+    username = getpass.getuser()
+    task_command = f'"{otd_exe_path}" --minimized'
+
+    create_result = _run_command(
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            task_name,
+            "/TR",
+            task_command,
+            "/SC",
+            "ONCE",
+            "/ST",
+            "00:00",
+            "/RL",
+            "LIMITED",
+            "/F",
+            "/IT",
+            "/RU",
+            username,
+        ],
+        timeout=15,
     )
-    return _run_command(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], timeout=15)
+    run_result = _run_command(["schtasks", "/Run", "/TN", task_name], timeout=15)
+    delete_result = _run_command(["schtasks", "/Delete", "/TN", task_name, "/F"], timeout=15)
+
+    combined_stdout = "\n".join(
+        part for part in [create_result.stdout, run_result.stdout, delete_result.stdout] if part.strip()
+    )
+    combined_stderr = "\n".join(
+        part for part in [create_result.stderr, run_result.stderr, delete_result.stderr] if part.strip()
+    )
+    return CommandResult(
+        args=["schtasks", task_name],
+        returncode=run_result.returncode if run_result.returncode != 0 else create_result.returncode,
+        stdout=combined_stdout,
+        stderr=combined_stderr,
+    )
 
 
 def switch_to_otd(otd_exe_path: str) -> SwitchResult:
@@ -186,10 +225,9 @@ def switch_to_otd(otd_exe_path: str) -> SwitchResult:
         return SwitchResult(False, "otd", "OTD executable path is invalid.", str(path))
 
     details: list[str] = []
-    kill_results = _kill_processes(WACOM_PROCESSES)
+    _kill_processes(WACOM_PROCESSES)
     stop_pro = _run_command(["sc", "stop", WACOM_PRO_SERVICE])
     stop_con = _run_command(["sc", "stop", WACOM_CON_SERVICE])
-    details.extend([result.format() for result in kill_results if result.returncode != 0 and "not found" not in result.stdout.lower()])
     details.append(stop_pro.format())
     details.append(stop_con.format())
     time.sleep(2)
@@ -207,7 +245,7 @@ def switch_to_otd(otd_exe_path: str) -> SwitchResult:
 
 def switch_to_wacom() -> SwitchResult:
     details: list[str] = []
-    details.extend(result.format() for result in _kill_processes(OTD_PROCESSES))
+    _kill_processes(OTD_PROCESSES)
     time.sleep(1)
 
     start_pro = _run_command(["sc", "start", WACOM_PRO_SERVICE])

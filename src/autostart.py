@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import os
 import subprocess
 import sys
@@ -31,6 +32,7 @@ def _run_schtasks(arguments: list[str]) -> subprocess.CompletedProcess[str]:
 
 def enable_autostart() -> bool:
     exe_path = _get_exe_path()
+    username = getpass.getuser()
     result = _run_schtasks(
         [
             "/Create",
@@ -40,8 +42,12 @@ def enable_autostart() -> bool:
             f'"{exe_path}"',
             "/SC",
             "ONLOGON",
+            "/DELAY",
+            "0000:10",
             "/RL",
             "HIGHEST",
+            "/RU",
+            username,
             "/NP",
             "/F",
         ]

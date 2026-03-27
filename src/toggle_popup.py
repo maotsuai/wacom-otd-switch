@@ -30,7 +30,7 @@ class TogglePopup(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedSize(320, 50)
         self.setStyleSheet(
-            "background: #F8F9FB; border: 1px solid #D8DCE3; border-radius: 12px;"
+            "background: #F8F9FB; border: none; border-radius: 12px;"
         )
         self._build_ui()
 
@@ -81,7 +81,7 @@ class TogglePopup(QWidget):
         self.state_stack.addWidget(self.error_label)
 
         layout.addWidget(self.wacom_label)
-        layout.addWidget(self.state_widget)
+        layout.addWidget(self.state_widget, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.otd_label)
         layout.addStretch(1)
         layout.addWidget(self.settings_button)
@@ -209,3 +209,4 @@ class TogglePopup(QWidget):
             return
 
         self.state_stack.setCurrentWidget(self.error_label)
+

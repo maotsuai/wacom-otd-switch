@@ -18,6 +18,8 @@ from tray import TrayController
 
 
 ERROR_ALREADY_EXISTS = 183
+TRAY_RETRY_INTERVAL_MS = 1000
+TRAY_RETRY_MAX_ATTEMPTS = 20
 
 
 class AppController(QWidget):
@@ -27,6 +29,7 @@ class AppController(QWidget):
         self._config = config
         self._hotkey_manager: HotkeyManager | None = None
         self._icon_path = get_resource_path("assets", "icon.ico")
+        self._tray_start_attempts = 0
 
         self._tray = TrayController(
             icon_path=self._icon_path,
@@ -38,6 +41,12 @@ class AppController(QWidget):
         self._register_hotkey()
 
     def start(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._tray_start_attempts += 1
+            if self._tray_start_attempts < TRAY_RETRY_MAX_ATTEMPTS:
+                QTimer.singleShot(TRAY_RETRY_INTERVAL_MS, self.start)
+            return
+
         self._tray.show()
         self.ensure_valid_config()
 
@@ -138,10 +147,6 @@ def main() -> int:
     mutex = create_single_instance_mutex()
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-
-    if not QSystemTrayIcon.isSystemTrayAvailable():
-        QMessageBox.critical(None, "Wacom-OTD Switch", "System tray is not available.")
-        return 1
 
     config, _ = load_config()
     set_language(config.get("language", "zh"))
