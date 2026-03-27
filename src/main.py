@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from pathlib import Path
 
@@ -86,6 +87,8 @@ class AppController(QWidget):
 
     def _handle_hotkey_triggered(self) -> None:
         current_driver = detect_current_driver()
+        if current_driver == "none":
+            return
         target = "wacom" if current_driver == "otd" else "otd"
         self._tray.popup.request_toggle(target)
 
@@ -96,8 +99,10 @@ class AppController(QWidget):
         if self._hotkey_manager is not None:
             self._hotkey_manager.stop()
             self._hotkey_manager = None
+        self._tray.popup.hide()
         self._tray.tray_icon.hide()
-        self._app.quit()
+        self._app.exit(0)
+        QTimer.singleShot(500, lambda: os._exit(0))
 
 
 def is_admin() -> bool:
