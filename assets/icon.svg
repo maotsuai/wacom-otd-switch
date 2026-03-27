@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="32" y1="28" x2="226" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5FAFF"/>
+      <stop offset="1" stop-color="#D7E9FF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="72" y1="74" x2="183" y2="184" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B7BFF"/>
+      <stop offset="1" stop-color="#35B8FF"/>
+    </linearGradient>
+    <filter id="shadow" x="30" y="28" width="196" height="198" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0B2B55" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect x="24" y="24" width="208" height="208" rx="52" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <path d="M70 136C70 100.654 98.6538 72 134 72H150C168.778 72 184 87.2223 184 106V124C184 159.346 155.346 188 120 188H104C85.2223 188 70 172.778 70 154V136Z" fill="white"/>
+    <path d="M96 95C96 87.268 102.268 81 110 81H145C159.912 81 172 93.0883 172 108V120C172 146.51 150.51 168 124 168H111C102.716 168 96 161.284 96 153V95Z" fill="url(#accent)"/>
+    <path d="M89 111L71 129L89 147" stroke="#0A4EBC" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M167 111L185 129L167 147" stroke="#2ABEFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M121 83L145 83" stroke="#F5FBFF" stroke-width="10" stroke-linecap="round" opacity="0.95"/>
+    <path d="M117 184C117 178.477 121.477 174 127 174C132.523 174 137 178.477 137 184V192C137 197.523 132.523 202 127 202C121.477 202 117 197.523 117 192V184Z" fill="#173A67"/>
+  </g>
+</svg>

@@ -1,0 +1,57 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build icon assets
+        shell: pwsh
+        run: |
+          python tools/build_icon.py
+
+      - name: Verify source compiles
+        shell: pwsh
+        run: |
+          python -m compileall src
+
+      - name: Build exe
+        shell: pwsh
+        run: |
+          pyinstaller --clean wacom_otd_switch.spec
+
+      - name: Rename with version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          Move-Item dist\WacomOTDSwitch.exe "dist\WacomOTDSwitch-$version.exe"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/WacomOTDSwitch-${{ github.ref_name }}.exe
+          generate_release_notes: true
