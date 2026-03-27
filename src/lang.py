@@ -19,6 +19,7 @@ TEXTS = {
         "hotkey_invalid": "快捷键无效，请重新选择。",
         "otd_path_invalid": "请选择有效的 OpenTabletDriver.UX.Wpf.exe 文件。",
         "tray_settings": "设置",
+        "tray_reload_tablet": "尝试重载数位板硬件",
         "tray_quit": "退出",
         "popup_wacom": "Wacom",
         "popup_otd": "OTD",
@@ -30,6 +31,9 @@ TEXTS = {
         "driver_not_detected": "10 秒内未识别到 Wacom 或 OTD 驱动。",
         "both_drivers_detected": "同时识别到了 Wacom 和 OTD，当前按 Wacom 侧展示。",
         "switch_failed_title": "切换失败",
+        "reload_failed_title": "重新载入失败",
+        "reload_success_title": "重新载入完成",
+        "reload_success_message": "数位板硬件已重新载入。",
     },
     "en": {
         "settings_title": "Settings",
@@ -51,6 +55,7 @@ TEXTS = {
         "hotkey_invalid": "Invalid hotkey, please choose again.",
         "otd_path_invalid": "Please select a valid OpenTabletDriver.UX.Wpf.exe file.",
         "tray_settings": "Settings",
+        "tray_reload_tablet": "Try Reload Tablet",
         "tray_quit": "Quit",
         "popup_wacom": "Wacom",
         "popup_otd": "OTD",
@@ -62,6 +67,9 @@ TEXTS = {
         "driver_not_detected": "Neither Wacom nor OTD was detected within 10 seconds.",
         "both_drivers_detected": "Both Wacom and OTD were detected. The switch is shown on the Wacom side.",
         "switch_failed_title": "Switch Failed",
+        "reload_failed_title": "Reload Failed",
+        "reload_success_title": "Reload Complete",
+        "reload_success_message": "Tablet hardware has been reloaded.",
     },
 }
 

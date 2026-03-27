@@ -10,9 +10,9 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidget
 
 from config import get_resource_path, load_config, save_config
-from driver_switcher import detect_current_driver
+from driver_switcher import detect_current_driver, reload_wacom_tablet_hardware
 from hotkey_manager import HotkeyManager, key_to_vk, modifiers_to_win32
-from lang import set_language
+from lang import set_language, t
 from settings_dialog import SettingsDialog
 from tray import TrayController
 
@@ -36,6 +36,7 @@ class AppController(QWidget):
             config_provider=self.get_config,
             on_open_settings=self.open_settings,
             on_driver_changed=self._on_driver_changed,
+            on_reload_hardware=self.reload_tablet_hardware,
             on_quit=self.quit,
         )
         self._register_hotkey()
@@ -104,6 +105,20 @@ class AppController(QWidget):
     def _on_driver_changed(self, driver: str) -> None:
         del driver
 
+    def reload_tablet_hardware(self) -> None:
+        result = reload_wacom_tablet_hardware(self._config.get("otd_path", ""))
+        if result.success:
+            QMessageBox.information(self, t("reload_success_title"), t("reload_success_message"))
+            return
+
+        message_box = QMessageBox(self)
+        message_box.setIcon(QMessageBox.Icon.Critical)
+        message_box.setWindowTitle(t("reload_failed_title"))
+        message_box.setText(result.summary or t("reload_failed_title"))
+        if result.details.strip():
+            message_box.setDetailedText(result.details)
+        message_box.exec()
+
     def quit(self) -> None:
         if self._hotkey_manager is not None:
             self._hotkey_manager.stop()
@@ -162,3 +177,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
