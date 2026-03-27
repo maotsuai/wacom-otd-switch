@@ -13,6 +13,7 @@
 ## 说明
 
 - 具体实现思路、需求细节与设计约束见 [REQUIREMENTS.md](REQUIREMENTS.md)。
+- 英文README见[readme-en.md](readme-en.md)。
 - 需求文档由 Claude 和 GPT 共同辅助编写。
 - 项目主体由 Codex 完成。
 - 本项目使用 [MIT License](LICENSE)。
