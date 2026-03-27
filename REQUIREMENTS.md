@@ -180,7 +180,7 @@ if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
 | ---------- | ------------------------------------------ |
 | 左键单击   | 在托盘图标正上方弹出 toggle 面板           |
 | 左键双击   | 同单击（不做区分）                         |
-| 右键单击   | 弹出右键菜单：`设置` / `退出`              |
+| 右键单击   | 弹出右键菜单：`设置` / `重新载入数位板硬件` / `退出` |
 
 ### QSystemTrayIcon 信号处理
 
@@ -198,10 +198,11 @@ def on_tray_activated(reason):
 ### 右键菜单
 
 ```
-┌──────────┐
-│  设置     │  → 打开设置窗口
-│  退出     │  → 注销快捷键 → 退出程序
-└──────────┘
+┌──────────────────────┐
+│  设置                 │  → 打开设置窗口
+│  重新载入数位板硬件   │  → 尝试恢复数位板响应
+│  退出                 │  → 注销快捷键 → 退出程序
+└──────────────────────┘
 ```
 
 ---
@@ -258,9 +259,18 @@ def on_tray_activated(reason):
 
 ### 交互
 
-1. 用户拨动 ToggleSwitch → 触发切换操作（见第八节）
-2. 切换过程中 ToggleSwitch **禁用**（防止重复点击），切换完成后重新启用
-3. 齿轮按钮 → 关闭弹出面板 → 打开设置窗口（屏幕居中）
+1. 面板显示后先进入驱动识别阶段：
+   - 在未识别到 Wacom / OTD 前，不显示拨动按钮，显示 loading 循环转圈
+   - 后端在子线程中探测驱动状态，探测超时时间为 10 秒
+2. 驱动识别结果反馈到 UI 后再显示最终状态：
+   - 仅识别到 Wacom → 显示拨动按钮，朝向 Wacom
+   - 仅识别到 OTD → 显示拨动按钮，朝向 OTD
+   - 10 秒内两者都未识别到 → 用红色 `X` 替换 loading，hover 显示“未识别到两者驱动”提示
+   - 同时识别到两者 → 显示拨动按钮朝向 Wacom，并在旁边显示 `?`，hover 提示“两者同时运行”
+3. 用户拨动 ToggleSwitch → 触发切换操作（见第八节）
+4. 切换过程中 ToggleSwitch **禁用**（防止重复点击），切换完成后重新启用
+5. 切换失败时弹出错误窗口，显示失败原因，并提供可复制的详细输出
+6. 齿轮按钮 → 关闭弹出面板 → 打开设置窗口（屏幕居中）
 
 ---
 
@@ -315,24 +325,31 @@ class ToggleSwitch(QWidget):
 程序启动时、每次弹出面板时，检测当前状态：
 
 ```python
-def detect_current_driver() -> str:
+def probe_driver_status() -> DriverStatus:
     """
-    返回 "wacom" / "otd" / "none"
+    返回：
+      - wacom_pro_running
+      - wacom_con_running
+      - otd_ui_running
+      - identified
+      - active_driver
+      - both_running
 
     判断逻辑：
-    1. 检查 WTabletServicePro 服务是否正在运行（sc query）
-    2. 检查 OpenTabletDriver.Daemon.exe 进程是否存在（tasklist）
+    1. Wacom 只判断两个服务：WTabletServicePro / WTabletServiceCon
+    2. OTD 只判断 OpenTabletDriver.UX.Wpf.exe 是否存在
+       不再优先判断 OpenTabletDriver.Daemon.exe
 
-    - 服务运行 + OTD 不存在 → "wacom"
-    - 服务停止 + OTD 存在   → "otd"
-    - 都没运行              → "none"（toggle 默认置为 Wacom 侧，即 unchecked）
-    - 都在运行              → "wacom"（异常状态，视为 Wacom 主导，切换时会先清理）
+    - 仅 Wacom 运行 → active_driver = "wacom"
+    - 仅 OTD 运行   → active_driver = "otd"
+    - 都没运行     → active_driver = None
+    - 都在运行     → active_driver = "wacom"，both_running = True
     """
 ```
 
-> **与 ToggleSwitch 的映射**：`detect_current_driver()` 的返回值映射到布尔态：
-> `"otd"` → `setChecked(True)`，其他一律 → `setChecked(False)`。
-> 不存在"中间状态"——ToggleSwitch 始终处于确定的一侧。
+> **与 ToggleSwitch 的映射**：`active_driver == "otd"` → `setChecked(True)`；
+> `active_driver == "wacom"` → `setChecked(False)`；
+> 未识别到任何驱动时不显示拨动按钮，而是显示 loading / 红色 `X` 状态。
 
 ### 切换到 OTD
 
@@ -358,18 +375,15 @@ def detect_current_driver() -> str:
 步骤 3：等待 2 秒
   让服务完全停止、USB 设备释放
 
-步骤 4：启动 OpenTabletDriver
-  subprocess.Popen(
-      [otd_exe_path, "--minimized"],
-      creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-  )
-  # --minimized 让 OTD 窗口以最小化状态启动
-  # DETACHED_PROCESS 让 OTD 独立于本程序运行
+步骤 4：以**非特权权限**启动 OpenTabletDriver
+  - 启动参数必须包含 `--minimized`
+  - 目标是让 OTD 以普通用户权限、最小化方式运行，避免弹出
+    “不应以特权身份运行”的窗口
 
 步骤 5：等待 2 秒后验证
-  检查 OpenTabletDriver.Daemon.exe 进程是否存在
+  检查 OpenTabletDriver.UX.Wpf.exe 进程是否存在
   存在 → 切换成功
-  不存在 → 切换失败（在 toggle 上恢复原状态）
+  不存在 → 切换失败（在 toggle 上恢复原状态，并弹出错误窗口）
 ```
 
 ### 切换到 Wacom
@@ -389,7 +403,7 @@ def detect_current_driver() -> str:
   # 服务启动后会自动拉起所有 Wacom 用户态进程（WacomHost 等），无需手动启动
 
 步骤 4：等待 2 秒后验证
-  检查 WTabletServicePro 服务状态是否为 RUNNING
+  检查 WTabletServicePro / WTabletServiceCon 是否至少有一个为 RUNNING
   是 → 切换成功
   否 → 切换失败
 ```
@@ -399,14 +413,58 @@ def detect_current_driver() -> str:
 
 ### 异步执行
 
-切换操作耗时数秒，**必须在子线程中执行**，不能阻塞 UI：
+切换操作耗时数秒，**必须在子线程中执行**，不能阻塞 UI。
+切换结果除了成功/失败外，还要返回：
+- 失败摘要（summary）
+- 详细输出（details）
+
+失败时 UI 必须弹出错误窗口，告知：
+- 哪一项启动失败
+- 是否有 stdout / stderr 输出
+- 详细内容可复制
 
 ```python
 class SwitchWorker(QThread):
-    finished = pyqtSignal(bool, str)  # (成功, 目标驱动 "wacom"/"otd")
+    finished = pyqtSignal(bool, str, str, str)
+    # (成功, 目标驱动, summary, details)
 
     def __init__(self, target: str, otd_path: str):
         ...
+
+### 手动重新载入数位板硬件
+
+右键托盘菜单提供“重新载入数位板硬件”入口，用于**尝试**恢复偶发性的数位板无响应。
+
+执行顺序：
+
+```
+1. 记录当前驱动状态
+   - 若仅 Wacom 运行 → 最后恢复 Wacom
+   - 若仅 OTD 运行   → 最后恢复 OTD
+   - 若两者都没运行 / 两者都运行 → 最后默认恢复 Wacom
+
+2. 记录 Windows Ink（TabletInputService）是否原本处于运行状态
+
+3. 关闭所有驱动
+   - 停止 Wacom 服务
+   - 结束 OTD 进程
+
+4. 如果 Windows Ink 原本在运行，则先停止 Windows Ink 服务
+
+5. 尝试对识别到的 Wacom 设备执行：
+   pnputil /restart-device <InstanceId>
+
+6. 不管 restart-device 成功与否，都继续恢复前面记录的目标驱动
+
+7. 如果 Windows Ink 原本在运行，则最后重新启动该服务
+```
+
+限制说明：
+- 这是**实验性**恢复功能，不保证稳定成功
+- `pnputil /restart-device` 在不同机器上的行为不完全一致
+- `devcon` 并非所有机器都自带，也不存在可依赖的通用分发版本
+- `USBDeview` 已验证对该问题无明显帮助
+- 若恢复失败，最终仍需用户手动重新插拔数位板或重启系统
 
     def run(self):
         # 执行切换步骤
@@ -680,7 +738,7 @@ def is_hotkey_available(modifiers: int, vk: int) -> tuple[bool, str]:
 
 ### 方案：Windows 任务计划程序（Task Scheduler）
 
-使用 `schtasks.exe` 创建一个"用户登录时以最高权限运行"的计划任务。
+使用 Windows 任务计划程序创建一个"用户登录时以最高权限运行"的计划任务。
 这是唯一能同时满足"管理员权限"和"无 UAC 弹框自启"的方案。
 
 ### 原理
@@ -691,105 +749,33 @@ def is_hotkey_available(modifiers: int, vk: int) -> tuple[bool, str]:
 
 ### 任务参数
 
-| 属性         | 值                                              |
-| ------------ | ----------------------------------------------- |
-| 任务名       | `WacomOTDSwitch`                                |
-| 触发器       | 当前用户登录时（`/SC ONLOGON`）                 |
-| 操作         | 启动 exe（`sys.executable` 的绝对路径）         |
-| 权限         | 以最高权限运行（`/RL HIGHEST`）                 |
-| 运行条件     | 无论是否接通电源都运行（`/NP`）                 |
+| 属性         | 值                                                               |
+| ------------ | ---------------------------------------------------------------- |
+| 任务名       | `WacomOTDSwitch`                                                 |
+| 安全选项     | 当用户登录时再运行（Interactive Logon）                          |
+| 配置         | Windows 10                                                       |
+| 触发器       | 当任何用户登录时触发                                             |
+| 操作         | 启动 exe（当前 exe 的绝对路径）                                  |
+| 权限         | 以最高权限运行                                                   |
+| 电源条件     | 去掉“只有在电脑使用交流电时才启用此任务”的限制                  |
 
 ### API
 
-```python
-import subprocess
-import sys
-import os
-import getpass
+实现上允许使用 `schtasks.exe` 或 PowerShell `ScheduledTasks` 接口，但创建出来的任务属性必须与上表一致。
 
-TASK_NAME = "WacomOTDSwitch"
-HIDE_WINDOW = subprocess.STARTUPINFO()
-HIDE_WINDOW.dwFlags = subprocess.STARTF_USESHOWWINDOW
-HIDE_WINDOW.wShowWindow = 0
-
-
-def _get_exe_path() -> str:
-    """获取当前 exe 的绝对路径"""
-    if getattr(sys, "frozen", False):
-        return sys.executable
-    else:
-        return os.path.abspath(sys.argv[0])
-
-
-def enable_autostart() -> bool:
-    """
-    创建计划任务实现开机自启。
-    如果任务已存在则先删除再创建（/F 强制覆盖）。
-    """
-    exe_path = _get_exe_path()
-    username = getpass.getuser()
-
-    # schtasks /Create 参数说明：
-    #   /TN   任务名
-    #   /TR   要运行的程序（引号包裹防空格）
-    #   /SC   触发类型 ONLOGON = 用户登录时
-    #   /RL   运行级别 HIGHEST = 以最高权限运行
-    #   /F    如果任务已存在则强制覆盖
-    #   /NP   不需要存储密码（使用当前登录的用户凭据）
-    result = subprocess.run(
-        [
-            "schtasks", "/Create",
-            "/TN", TASK_NAME,
-            "/TR", f'"{exe_path}"',
-            "/SC", "ONLOGON",
-            "/RL", "HIGHEST",
-            "/NP",
-            "/F",
-        ],
-        startupinfo=HIDE_WINDOW,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def disable_autostart() -> bool:
-    """删除计划任务"""
-    result = subprocess.run(
-        ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
-        startupinfo=HIDE_WINDOW,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    # returncode == 0 成功删除
-    # 任务不存在时 schtasks 返回非零，同样视为"已禁用"
-    return True
-
-
-def is_autostart_enabled() -> bool:
-    """查询计划任务是否存在"""
-    result = subprocess.run(
-        ["schtasks", "/Query", "/TN", TASK_NAME],
-        startupinfo=HIDE_WINDOW,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    return result.returncode == 0
-```
+关键要求：
+- 任务绑定当前登录用户的交互式会话
+- 运行级别为 Highest
+- 兼容配置为 Windows 10
+- 触发器保持“当任何用户登录时”
+- 不加“仅交流电”限制
+- 重复启用时应覆盖旧任务，保持幂等
 
 ### 注意事项
 
-- `schtasks.exe` 是 Windows 自带工具，无需额外依赖。
 - 创建/删除任务需要管理员权限——程序已以管理员运行（见第四节），所以直接调用即可。
-- 任务创建时使用 `/F` 标志，重复启用是幂等操作。
-- `ONLOGON` 触发器在任何用户登录时触发。由于 `/RL HIGHEST`，
-  Windows 会以创建者的管理员权限运行，不弹 UAC。
+- 任务创建逻辑必须覆盖旧任务，保证重复启用是幂等操作。
+- 任务的目标是“用户登录后无 UAC、稳定显示托盘图标地启动程序”。
 
 ---
 
@@ -1013,10 +999,15 @@ git push origin v1.0.0
   → 程序安静地在后台运行
 用户点击托盘图标
   → 弹出面板出现在图标上方
-  → 显示当前状态（Wacom 或 OTD）
+  → 先显示 loading 循环转圈
+  → 后端在 10 秒内探测驱动状态
+  → 若识别到单一驱动：显示对应方向的拨动按钮
+  → 若两者同时识别到：显示朝向 Wacom 的拨动按钮，并显示问号提示
+  → 若 10 秒内都未识别到：显示红色 X，并在 hover 时提示未识别到驱动
   → 用户拨动开关
   → 开关禁用，开始切换（子线程）
-  → 切换完成 → 开关滑到新位置并重新启用
+  → 若切换失败：弹出错误窗口，并附详细输出
+  → 若切换成功：开关滑到新位置并重新启用
   → 用户点击面板外部 → 面板关闭
 
 或者：用户按下全局快捷键
@@ -1038,7 +1029,9 @@ git push origin v1.0.0
 
 ## 十八、不做的事情（明确排除）
 
-- ❌ 不做 USB 设备重置/拔插模拟
+- ❌ 不做可靠的 USB 设备重置/拔插模拟方案
+  - 程序仅提供实验性的 `pnputil /restart-device` 尝试恢复
+  - 若失败，仍需用户手动重新插拔数位板或重启系统
 - ❌ 不做 Wacom 驱动安装/卸载
 - ❌ 不做 OTD 的自动安装/更新
 - ❌ 不做多语言 i18n 框架（只有中/英硬编码）
